@@ -1,26 +1,44 @@
+mod cli;
 use bitcoin::consensus::encode::{deserialize, serialize};
 use bitcoin::network::Network;
 use bitcoin::p2p::address::Address;
 use bitcoin::p2p::message::{NetworkMessage, RawNetworkMessage};
 use bitcoin::p2p::message_network::VersionMessage;
 use bitcoin::p2p::ServiceFlags;
+use clap::Parser;
 use std::io::{BufReader, Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 
 fn main() {
-    let target_ip = "seed.bitcoin.sipa.be:8333";
+    // Parse command-line arguments
+    let args = cli::Cli::parse();
 
-    let stream = TcpStream::connect(target_ip);
+    let target_addr = match (args.host.as_str(), args.port).to_socket_addrs() {
+        Ok(mut addrs) => addrs.next().unwrap_or_else(|| {
+            eprintln!("[-] Failed to resolve address for {}:{}", args.host, args.port);
+            std::process::exit(1);
+        }),
+        Err(e) => {
+            eprintln!("[-] Error resolving address for {}:{} - {}", args.host, args.port, e);
+            std::process::exit(1);
+        }
+    };
+
+    let timeout_duration = std::time::Duration::from_secs(args.timeout);
+
+    let stream = TcpStream::connect_timeout(&target_addr, timeout_duration);
     let mut stream = match stream {
         Ok(tcpstream) => {
-            println!("[+] Connected to {}", target_ip);
+            println!("[+] Connected to {}", target_addr);
             tcpstream
         }
         Err(e) => {
-            println!("[-] Error connecting to {}: {}", target_ip, e);
+            println!("[-] Error connecting to {}: {}", target_addr, e);
             return;
         }
     };
+
+    println!("[+] CLI Arguments: {:?}", args);
 
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     println!("[+] Reader created");
