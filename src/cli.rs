@@ -12,19 +12,15 @@ pub struct Cli {
     #[arg(long, default_value_t = 8333)]
     pub port: u16,
 
+    /// Network to connect to (default: mainnet)
+    #[arg(long, default_value = "mainnet")]
+    pub network: String,
+
     /// Number of crawling threads
     #[arg(long)]
     pub threads: Option<u8>,
 
-    /// Path to a future log file
-    #[arg(long)]
-    pub logfile: Option<String>,
-
     /// Timeout for connection attempts in seconds (default: 10, minimum: 1)
     #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
     pub timeout: u64,
-
-    /// Filter peers by service flags (e.g., compact blocks, address relay, bloom filters)
-    #[clap(long)]
-    service_flags: Option<u64>,
 }
