@@ -4,12 +4,12 @@ use bitcoin::{
     Network,
     consensus::{
         Decodable,
-        encode::{Error, serialize},
+        encode::serialize,
     },
     io::Cursor,
     p2p::{
         Address, ServiceFlags,
-        message::{MAX_MSG_SIZE, NetworkMessage, RawNetworkMessage},
+        message::{NetworkMessage, RawNetworkMessage},
         message_network::VersionMessage,
     },
 };
@@ -17,16 +17,19 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
-use tracing::{error, info};
+
+use crate::{Event, LogLevel, LogMessage};
+use tokio::sync::mpsc::Sender;
 
 #[derive(Clone)]
 pub struct NetworkMessageHandler {
     pub network: Network,
+    pub log_tx: Option<Sender<LogMessage>>,
 }
 
 impl NetworkMessageHandler {
-    pub fn new(network: Network) -> Self {
-        NetworkMessageHandler { network }
+    pub fn new(network: Network, log_tx: Option<Sender<LogMessage>>) -> Self {
+        NetworkMessageHandler { network, log_tx }
     }
 
     fn build_version_message(&self, stream: &mut TcpStream) -> RawNetworkMessage {
@@ -57,10 +60,24 @@ impl NetworkMessageHandler {
 
         match result {
             Ok(_) => {
-                info!("[+] Version message sent");
+                if let Some(log_tx) = &self.log_tx {
+                    let _ = log_tx
+                        .send(LogMessage {
+                            level: LogLevel::Info,
+                            event: Event::Custom("Version message sent".to_string()),
+                        })
+                        .await;
+                }
             }
             Err(e) => {
-                error!("[-] Error sending version message: {:?}", e);
+                if let Some(log_tx) = &self.log_tx {
+                    let _ = log_tx
+                        .send(LogMessage {
+                            level: LogLevel::Error,
+                            event: Event::Custom(format!("Error sending version message: {:?}", e)),
+                        })
+                        .await;
+                }
             }
         }
     }
@@ -71,10 +88,24 @@ impl NetworkMessageHandler {
 
         match result {
             Ok(_) => {
-                info!("[+] Verack message sent");
+                if let Some(log_tx) = &self.log_tx {
+                    let _ = log_tx
+                        .send(LogMessage {
+                            level: LogLevel::Info,
+                            event: Event::Custom("Verack message sent".to_string()),
+                        })
+                        .await;
+                }
             }
             Err(e) => {
-                error!("[-] Error sending verack message: {:?}", e);
+                if let Some(log_tx) = &self.log_tx {
+                    let _ = log_tx
+                        .send(LogMessage {
+                            level: LogLevel::Error,
+                            event: Event::Custom(format!("Error sending verack message: {:?}", e)),
+                        })
+                        .await;
+                }
             }
         }
     }
@@ -86,10 +117,24 @@ impl NetworkMessageHandler {
 
         match result {
             Ok(_) => {
-                info!("[+] Pong message sent");
+                if let Some(log_tx) = &self.log_tx {
+                    let _ = log_tx
+                        .send(LogMessage {
+                            level: LogLevel::Info,
+                            event: Event::Custom("Pong message sent".to_string()),
+                        })
+                        .await;
+                }
             }
             Err(e) => {
-                error!("[-] Error sending pong message: {:?}", e);
+                if let Some(log_tx) = &self.log_tx {
+                    let _ = log_tx
+                        .send(LogMessage {
+                            level: LogLevel::Error,
+                            event: Event::Custom(format!("Error sending pong message: {:?}", e)),
+                        })
+                        .await;
+                }
             }
         }
     }
@@ -100,10 +145,24 @@ impl NetworkMessageHandler {
 
         match result {
             Ok(_) => {
-                info!("[+] GetAddr message sent");
+                if let Some(log_tx) = &self.log_tx {
+                    let _ = log_tx
+                        .send(LogMessage {
+                            level: LogLevel::Info,
+                            event: Event::Custom("GetAddr message sent".to_string()),
+                        })
+                        .await;
+                }
             }
             Err(e) => {
-                error!("[-] Error sending getaddr message: {:?}", e);
+                if let Some(log_tx) = &self.log_tx {
+                    let _ = log_tx
+                        .send(LogMessage {
+                            level: LogLevel::Error,
+                            event: Event::Custom(format!("Error sending getaddr message: {:?}", e)),
+                        })
+                        .await;
+                }
             }
         }
     }

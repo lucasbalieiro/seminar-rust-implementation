@@ -1,48 +1,63 @@
-use std::{
-    collections::HashMap,
-    net::{IpAddr, SocketAddr},
-    sync::Arc,
-};
+use std::net::{IpAddr, SocketAddr};
 
-use bitcoin::p2p::Address;
+use bitcoin::p2p;
 use clap::Parser;
 use database::Database;
-use seminar_rust_implementation::{cli::Cli, crawler::Crawler, database, node::Node};
+use seminar_rust_implementation::{
+    Event, LogLevel, LogMessage, cli::Cli, crawler::Crawler, database, logger::logger_task,
+    node::Node,
+};
 use tokio::sync::mpsc;
+
+fn parse_level(s: &str) -> LogLevel {
+    match s.to_lowercase().as_str() {
+        "trace" => LogLevel::Trace,
+        "debug" => LogLevel::Debug,
+        "info" => LogLevel::Info,
+        "warn" => LogLevel::Warn,
+        "error" => LogLevel::Error,
+        _ => LogLevel::Info,
+    }
+}
+
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
-
-    tracing::info!("Starting the crawler...");
-
-    let (tx, rx) = mpsc::channel::<Vec<(u32, Address)>>(100);
+    let (tx, rx) = mpsc::channel::<Vec<(u32, p2p::Address)>>(100);
 
     let db = Database::new("peers.db".to_string());
-    let mut db_receiver = database::DatabaseReceiver::new(rx, db);
+
+    let cli = Cli::parse();
+    let min_level = parse_level(&cli.verbosity);
+
+    let (log_tx, log_rx) = mpsc::channel::<LogMessage>(100);
+    tokio::spawn(logger_task(log_rx, min_level));
+
+    let mut db_receiver = database::DatabaseReceiver::new(rx, db, Some(log_tx.clone()));
     let db_handle = tokio::spawn(async move {
         db_receiver.run_rx_loop().await;
     });
 
-    let args = Cli::parse();
-
     // Create a new Database instance for reading (separate from the one used by the receiver)
     let db_read = Database::new("peers.db".to_string());
     let seed_peers = db_read
-        .get_nodes(args.threads)
+        .get_nodes(cli.threads)
         .into_iter()
         .map(|info| info.into())
         .collect::<Vec<Node>>();
 
-    let fallback_node = SocketAddr::new(IpAddr::V4(args.host.parse().unwrap()), args.port);
+    let fallback_node = SocketAddr::new(IpAddr::V4(cli.host.parse().unwrap()), cli.port);
 
-    let fallback_node = Node::new(fallback_node, args.network);
+    let fallback_node = Node::new(fallback_node, cli.network.clone());
 
-    let mut crawler = Crawler::new(fallback_node, args.timeout, tx.clone());
+    let mut crawler = Crawler::new(fallback_node, cli.timeout, tx.clone(), Some(log_tx.clone()));
 
     if seed_peers.is_empty() {
-        tracing::info!("No seed peers found. Using fallback node.");
+        let _ = log_tx
+            .send(LogMessage {
+                level: LogLevel::Info,
+                event: Event::Custom("No seed peers found. Using fallback node.".to_string()),
+            })
+            .await;
         crawler.node = fallback_node.clone();
         tokio::spawn(async move {
             crawler.crawl_peer().await;
@@ -50,7 +65,12 @@ async fn main() {
         .await
         .unwrap();
     } else {
-        tracing::info!("Using seed peers.");
+        let _ = log_tx
+            .send(LogMessage {
+                level: LogLevel::Info,
+                event: Event::Custom("Using seed peers.".to_string()),
+            })
+            .await;
         let mut handles = Vec::new();
         for seed_peer in seed_peers {
             let mut crawler = crawler.clone();

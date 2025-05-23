@@ -1,8 +1,6 @@
-use std::net::{SocketAddr, ToSocketAddrs};
-
-use bitcoin::p2p::Address;
+use crate::{Event, LogLevel, LogMessage};
 use rusqlite::Connection;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::Sender;
 
 use crate::node::NodeInfo;
 
@@ -12,8 +10,9 @@ pub struct Database {
 }
 
 pub struct DatabaseReceiver {
-    rx: Receiver<Vec<(u32, Address)>>,
+    rx: tokio::sync::mpsc::Receiver<Vec<(u32, bitcoin::p2p::Address)>>,
     db: Database,
+    pub log_tx: Option<tokio::sync::mpsc::Sender<LogMessage>>,
 }
 
 impl Database {
@@ -80,8 +79,12 @@ impl Database {
 }
 
 impl DatabaseReceiver {
-    pub fn new(rx: Receiver<Vec<(u32, Address)>>, db: Database) -> Self {
-        Self { rx, db }
+    pub fn new(
+        rx: tokio::sync::mpsc::Receiver<Vec<(u32, bitcoin::p2p::Address)>>,
+        db: Database,
+        log_tx: Option<Sender<LogMessage>>,
+    ) -> Self {
+        Self { rx, db, log_tx }
     }
 
     pub async fn run_rx_loop(&mut self) {
@@ -96,17 +99,23 @@ impl DatabaseReceiver {
                 })
                 .collect();
             self.db.bulk_insert_or_update_nodes(&nodes);
+            if let Some(log_tx) = &self.log_tx {
+                let _ = log_tx
+                    .send(LogMessage {
+                        level: LogLevel::Info,
+                        event: Event::SavedToDisk(nodes.len()),
+                    })
+                    .await;
+            }
         }
     }
 }
 
 mod tests {
-    use super::*;
-    use tokio::sync::mpsc;
+    use super::*;    
 
     #[tokio::test]
     async fn test_database() {
-        let (tx, rx) = mpsc::channel::<Vec<(u32, Address)>>(1);
         let mut db = Database::new("test.db".to_string());
 
         let nodes = vec![
@@ -125,7 +134,6 @@ mod tests {
     }
     #[test]
     fn test_get_nodes() {
-        let (_tx, rx) = tokio::sync::mpsc::channel::<Vec<(u32, Address)>>(1);
         let db = Database::new("test.db".to_string());
         let nodes = db.get_nodes(2);
         assert_eq!(nodes.len(), 2);

@@ -1,8 +1,5 @@
 use bitcoin::p2p::Address;
-use std::{
-    fmt::Debug,
-    net::{IpAddr, SocketAddr},
-};
+use std::net::{IpAddr, SocketAddr};
 
 use bitcoin::Network;
 

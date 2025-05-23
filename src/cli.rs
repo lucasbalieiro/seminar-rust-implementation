@@ -23,4 +23,8 @@ pub struct Cli {
     /// Timeout for connection attempts in seconds (default: 10, minimum: 1)
     #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
     pub timeout: u64,
+
+    /// Verbosity level (trace, debug, info, warn, error)
+    #[arg(long, default_value = "info")]
+    pub verbosity: String,
 }
