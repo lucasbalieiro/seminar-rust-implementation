@@ -111,6 +111,7 @@ impl DatabaseReceiver {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;    
 

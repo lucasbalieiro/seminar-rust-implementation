@@ -1,13 +1,14 @@
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 
 use bitcoin::p2p;
 use clap::Parser;
 use database::Database;
 use seminar_rust_implementation::{
-    Event, LogLevel, LogMessage, cli::Cli, crawler::Crawler, database, logger::logger_task,
+    dns_server, Event, LogLevel, LogMessage, cli::Cli, crawler::Crawler, database, logger::logger_task,
     node::Node,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLock};
 
 fn parse_level(s: &str) -> LogLevel {
     match s.to_lowercase().as_str() {
@@ -24,7 +25,8 @@ fn parse_level(s: &str) -> LogLevel {
 async fn main() {
     let (tx, rx) = mpsc::channel::<Vec<(u32, p2p::Address)>>(100);
 
-    let db = Database::new("peers.db".to_string());
+    let db_read = Database::new("peers.db".to_string());
+    let db_arc = Arc::new(RwLock::new(db_read));
 
     let cli = Cli::parse();
     let min_level = parse_level(&cli.verbosity);
@@ -32,14 +34,22 @@ async fn main() {
     let (log_tx, log_rx) = mpsc::channel::<LogMessage>(100);
     tokio::spawn(logger_task(log_rx, min_level));
 
-    let mut db_receiver = database::DatabaseReceiver::new(rx, db, Some(log_tx.clone()));
+    // Spawn DNS server (create a new Database instance inside the task)
+    let dns_log = Some(log_tx.clone());
+    tokio::spawn(async move {
+        let db = Database::new("peers.db".to_string());
+        dns_server::run_dns_server(db, dns_log).await;
+    });
+
+    let mut db_receiver = database::DatabaseReceiver::new(rx, Database::new("peers.db".to_string()), Some(log_tx.clone()));
     let db_handle = tokio::spawn(async move {
         db_receiver.run_rx_loop().await;
     });
 
     // Create a new Database instance for reading (separate from the one used by the receiver)
-    let db_read = Database::new("peers.db".to_string());
-    let seed_peers = db_read
+    let seed_peers = db_arc
+        .read()
+        .await
         .get_nodes(cli.threads)
         .into_iter()
         .map(|info| info.into())
